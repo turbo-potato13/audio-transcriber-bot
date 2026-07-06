@@ -11,14 +11,16 @@
 - отвечает распознанным текстом в reply-сообщениях;
 - разбивает длинный текст на несколько сообщений;
 - удаляет временный файл после обработки;
-- ограничивает доступ через `ALLOWED_USER_IDS` или `ALLOWED_CHAT_IDS`;
+- ограничивает доступ через `ALLOWED_CHAT_IDS`;
 - логирует старт, получение файла, размер, успешное распознавание и ошибки.
 
 По умолчанию используется OpenAI-compatible endpoint:
 
 `https://api.openai.com/v1/audio/transcriptions`
 
-Ключ кладется в переменную `SPEECH_TO_TEXT_API_KEY`.
+Для OpenAI ключ берется в [OpenAI API keys](https://platform.openai.com/api-keys). В `.env` нужно вставить сам secret key целиком в `SPEECH_TO_TEXT_API_KEY`.
+
+Важно: это не Telegram bot token и не ChatGPT Plus. Это отдельный API key в OpenAI Platform. Для работы API на аккаунте должна быть доступна оплата/кредиты.
 
 ## Структура
 
@@ -64,9 +66,11 @@ nano .env
 
 ```env
 BOT_TOKEN=123456:telegram-bot-token
-SPEECH_TO_TEXT_API_KEY=stt-api-key
-ALLOWED_USER_IDS=123456789
+SPEECH_TO_TEXT_API_KEY=sk-your-openai-api-key
+ALLOWED_CHAT_IDS=123456789
 ```
+
+`ALLOWED_CHAT_IDS` можно узнать командой `/chatid` или `/chatId`. При первом запуске можно оставить `ALLOWED_CHAT_IDS` пустым, отправить команду боту, скопировать `chat_id` в `.env`, затем перезапустить бота.
 
 Запустите бота:
 
@@ -79,9 +83,8 @@ python -m bot.main
 | Переменная | Обязательная | Описание |
 | --- | --- | --- |
 | `BOT_TOKEN` | да | Токен Telegram-бота от BotFather. |
-| `SPEECH_TO_TEXT_API_KEY` | да | API key для speech-to-text сервиса. |
-| `ALLOWED_USER_IDS` | нет | Список Telegram user_id через запятую. Если задан, бот отвечает только этим пользователям. |
-| `ALLOWED_CHAT_IDS` | нет | Список chat_id через запятую. Можно использовать для групп или личного чата. |
+| `SPEECH_TO_TEXT_API_KEY` | да | Secret key от OpenAI Platform или другого OpenAI-compatible speech-to-text сервиса. Для OpenAI создается на `https://platform.openai.com/api-keys`. |
+| `ALLOWED_CHAT_IDS` | нет | Список chat_id через запятую. Узнать можно командой `/chatid` или `/chatId`. |
 | `DOWNLOAD_DIR` | нет | Каталог временных загрузок. По умолчанию `tmp/downloads`. |
 | `MAX_FILE_MB` | нет | Максимальный размер файла в MB. По умолчанию `20`. |
 | `SPEECH_TO_TEXT_API_URL` | нет | Endpoint STT API. По умолчанию OpenAI audio transcriptions endpoint. |
@@ -89,12 +92,12 @@ python -m bot.main
 | `SPEECH_TO_TEXT_LANGUAGE` | нет | Подсказка языка, например `ru`. Можно оставить пустым. |
 | `SPEECH_TO_TEXT_TIMEOUT_SECONDS` | нет | Timeout запроса к STT API. По умолчанию `120`. |
 
-Если `ALLOWED_USER_IDS` и `ALLOWED_CHAT_IDS` пустые, доступ не ограничивается.
+Если `ALLOWED_CHAT_IDS` пустой, доступ не ограничивается. Для личного бота лучше после проверки сразу заполнить `ALLOWED_CHAT_IDS`.
 
 ## Команды бота
 
 - `/start` и `/help` - краткая справка;
-- `/chatid` - показать `chat_id`;
+- `/chatid` и `/chatId` - показать `chat_id`, который нужно вписать в `ALLOWED_CHAT_IDS`;
 - `/status` - проверить, что бот жив.
 
 ## Деплой на Ubuntu через systemd

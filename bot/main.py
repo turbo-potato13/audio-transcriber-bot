@@ -24,7 +24,7 @@ HELP_TEXT = (
     "Отправьте voice message, audio file, video file или document с audio/video файлом.\n\n"
     "Команды:\n"
     "/help - справка\n"
-    "/chatid - показать chat_id\n"
+    "/chatid или /chatId - показать chat_id для ALLOWED_CHAT_IDS\n"
     "/status - проверить, что бот жив"
 )
 
@@ -82,12 +82,14 @@ async def run_bot(config: Config) -> None:
             return
         await message.answer(HELP_TEXT)
 
-    @router.message(Command("chatid"))
+    @router.message(Command("chatid", "chatId"))
     async def handle_chat_id(message: Message) -> None:
-        if not await ensure_allowed(message, config):
-            return
         user_id = message.from_user.id if message.from_user else "unknown"
-        await message.answer(f"chat_id: {message.chat.id}\nuser_id: {user_id}")
+        await message.answer(
+            f"chat_id: {message.chat.id}\n"
+            f"user_id: {user_id}\n\n"
+            "Для ограничения доступа добавьте chat_id в ALLOWED_CHAT_IDS."
+        )
 
     @router.message(Command("status"))
     async def handle_status(message: Message) -> None:
@@ -215,12 +217,10 @@ async def ensure_allowed(message: object, config: Config) -> bool:
 
 
 def is_allowed(message: object, config: Config) -> bool:
-    if not config.allowed_user_ids and not config.allowed_chat_ids:
+    if not config.allowed_chat_ids:
         return True
 
-    chat_allowed = message.chat.id in config.allowed_chat_ids
-    user_allowed = bool(message.from_user and message.from_user.id in config.allowed_user_ids)
-    return chat_allowed or user_allowed
+    return message.chat.id in config.allowed_chat_ids
 
 
 def extract_media(message: object) -> IncomingMedia:

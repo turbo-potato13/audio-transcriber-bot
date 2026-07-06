@@ -17,7 +17,6 @@ class ConfigError(RuntimeError):
 class Config:
     bot_token: str
     speech_to_text_api_key: str
-    allowed_user_ids: frozenset[int]
     allowed_chat_ids: frozenset[int]
     download_dir: Path
     max_file_mb: int
@@ -52,7 +51,6 @@ def load_config(env_file: str | Path = ".env") -> Config:
     return Config(
         bot_token=bot_token,
         speech_to_text_api_key=api_key,
-        allowed_user_ids=_parse_id_list("ALLOWED_USER_IDS"),
         allowed_chat_ids=_parse_id_list("ALLOWED_CHAT_IDS"),
         download_dir=download_dir,
         max_file_mb=max_file_mb,
