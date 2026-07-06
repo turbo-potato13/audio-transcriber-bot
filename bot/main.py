@@ -14,7 +14,7 @@ from .files import (
     remove_file_quietly,
     split_text,
 )
-from .transcriber import EmptyTranscriptionError, RecognitionAPIError, Transcriber, UnsupportedFormatError
+from .transcriber import EmptyTranscriptionError, RecognitionError, Transcriber, UnsupportedFormatError
 
 
 logger = logging.getLogger(__name__)
@@ -69,11 +69,12 @@ async def run_bot(config: Config) -> None:
     router = Router()
     processing_lock = asyncio.Lock()
     transcriber = Transcriber(
-        api_key=config.speech_to_text_api_key,
-        api_url=config.speech_to_text_api_url,
-        model=config.speech_to_text_model,
-        language=config.speech_to_text_language,
-        timeout_seconds=config.speech_to_text_timeout_seconds,
+        whisper_cpp_binary=config.whisper_cpp_binary,
+        whisper_cpp_model=config.whisper_cpp_model,
+        ffmpeg_binary=config.ffmpeg_binary,
+        language=config.whisper_language,
+        threads=config.whisper_threads,
+        timeout_seconds=config.transcription_timeout_seconds,
     )
 
     @router.message(Command("start", "help"))
@@ -176,7 +177,7 @@ async def process_media_message(
             logger.warning("Rejected file after download because it is too large: %s", actual_size)
             return
 
-        await message.reply("Файл получен, начинаю распознавание.")
+        await message.reply("Файл получен, начинаю локальное распознавание.")
 
         text = await transcriber.transcribe(local_path, content_type=media.mime_type)
         chunks = split_text(text)
@@ -191,14 +192,14 @@ async def process_media_message(
         logger.exception("Failed to download Telegram file")
         await message.reply("Не удалось скачать файл. Попробуйте отправить его еще раз.")
     except UnsupportedFormatError:
-        logger.exception("Speech-to-text API rejected file format")
-        await message.reply("Формат не поддерживается сервисом распознавания.")
+        logger.exception("Local transcriber rejected file format")
+        await message.reply("Формат не поддерживается или файл поврежден.")
     except EmptyTranscriptionError:
-        logger.exception("Speech-to-text API returned empty result")
+        logger.exception("Local transcriber returned empty result")
         await message.reply("Распознавание завершилось, но текст не найден.")
-    except RecognitionAPIError:
-        logger.exception("Speech-to-text API error")
-        await message.reply("Ошибка API распознавания. Попробуйте позже.")
+    except RecognitionError:
+        logger.exception("Local transcription error")
+        await message.reply("Ошибка локального распознавания. Проверьте установку whisper.cpp и попробуйте позже.")
     except OSError:
         logger.exception("Failed to process local temporary file")
         await message.reply("Не удалось обработать временный файл. Попробуйте еще раз.")

@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-DEFAULT_STT_API_URL = "https://api.openai.com/v1/audio/transcriptions"
-DEFAULT_STT_MODEL = "whisper-1"
+DEFAULT_WHISPER_CPP_BINARY = "/home/ubuntu/whisper.cpp/build/bin/whisper-cli"
+DEFAULT_WHISPER_CPP_MODEL = "/home/ubuntu/whisper.cpp/models/ggml-tiny.bin"
 
 
 class ConfigError(RuntimeError):
@@ -16,14 +16,15 @@ class ConfigError(RuntimeError):
 @dataclass(frozen=True)
 class Config:
     bot_token: str
-    speech_to_text_api_key: str
     allowed_chat_ids: frozenset[int]
     download_dir: Path
     max_file_mb: int
-    speech_to_text_api_url: str
-    speech_to_text_model: str
-    speech_to_text_language: str | None
-    speech_to_text_timeout_seconds: int
+    ffmpeg_binary: str
+    whisper_cpp_binary: Path
+    whisper_cpp_model: Path
+    whisper_language: str | None
+    whisper_threads: int
+    transcription_timeout_seconds: int
 
     @property
     def max_file_bytes(self) -> int:
@@ -41,25 +42,30 @@ def load_config(env_file: str | Path = ".env") -> Config:
         load_dotenv(env_path)
 
     bot_token = _required("BOT_TOKEN")
-    api_key = _required("SPEECH_TO_TEXT_API_KEY")
 
     max_file_mb = _positive_int("MAX_FILE_MB", default=20)
-    timeout_seconds = _positive_int("SPEECH_TO_TEXT_TIMEOUT_SECONDS", default=120)
+    whisper_threads = _positive_int("WHISPER_THREADS", default=1)
+    timeout_seconds = _positive_int("TRANSCRIPTION_TIMEOUT_SECONDS", default=600)
 
     download_dir = Path(os.getenv("DOWNLOAD_DIR", "tmp/downloads")).expanduser()
 
     return Config(
         bot_token=bot_token,
-        speech_to_text_api_key=api_key,
         allowed_chat_ids=_parse_id_list("ALLOWED_CHAT_IDS"),
         download_dir=download_dir,
         max_file_mb=max_file_mb,
-        speech_to_text_api_url=os.getenv("SPEECH_TO_TEXT_API_URL", DEFAULT_STT_API_URL).strip()
-        or DEFAULT_STT_API_URL,
-        speech_to_text_model=os.getenv("SPEECH_TO_TEXT_MODEL", DEFAULT_STT_MODEL).strip()
-        or DEFAULT_STT_MODEL,
-        speech_to_text_language=_optional("SPEECH_TO_TEXT_LANGUAGE"),
-        speech_to_text_timeout_seconds=timeout_seconds,
+        ffmpeg_binary=os.getenv("FFMPEG_BINARY", "ffmpeg").strip() or "ffmpeg",
+        whisper_cpp_binary=Path(
+            os.getenv("WHISPER_CPP_BINARY", DEFAULT_WHISPER_CPP_BINARY).strip()
+            or DEFAULT_WHISPER_CPP_BINARY
+        ).expanduser(),
+        whisper_cpp_model=Path(
+            os.getenv("WHISPER_CPP_MODEL", DEFAULT_WHISPER_CPP_MODEL).strip()
+            or DEFAULT_WHISPER_CPP_MODEL
+        ).expanduser(),
+        whisper_language=_optional("WHISPER_LANGUAGE"),
+        whisper_threads=whisper_threads,
+        transcription_timeout_seconds=timeout_seconds,
     )
 
 

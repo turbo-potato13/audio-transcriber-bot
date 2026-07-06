@@ -1,26 +1,22 @@
 # Audio Transcriber Telegram Bot
 
-Небольшой Telegram-бот для преобразования голосовых, аудио и аудио/видео документов в текст через внешний speech-to-text API. Проект рассчитан на личное использование и слабую VM: локальная модель распознавания не запускается.
+Небольшой Telegram-бот для преобразования голосовых, аудио и аудио/видео документов в текст. Распознавание работает бесплатно и оффлайн через локальный `whisper.cpp`; OpenAI API key, ChatGPT Plus и платные speech-to-text API не нужны.
+
+Проект рассчитан на слабую Oracle Ubuntu VM с примерно 1 GB RAM и уже работающим другим Telegram-ботом. Поэтому рекомендуемый стартовый вариант: `whisper.cpp` + multilingual model `tiny` + `WHISPER_THREADS=1`.
 
 ## Что умеет бот
 
 - принимает Telegram voice messages, audio messages, video messages и documents с audio/video MIME type;
 - скачивает файл во временную папку;
 - проверяет лимит размера из `MAX_FILE_MB`, по умолчанию 20 MB;
-- отправляет файл во внешний speech-to-text API;
+- конвертирует файл в WAV 16 kHz mono через `ffmpeg`;
+- запускает локальный `whisper-cli`;
 - отвечает распознанным текстом в reply-сообщениях;
 - разбивает длинный текст на несколько сообщений;
-- удаляет временный файл после обработки;
+- удаляет временные файлы после обработки;
 - ограничивает доступ через `ALLOWED_CHAT_IDS`;
+- обрабатывает файлы последовательно, чтобы не перегружать сервер;
 - логирует старт, получение файла, размер, успешное распознавание и ошибки.
-
-По умолчанию используется OpenAI-compatible endpoint:
-
-`https://api.openai.com/v1/audio/transcriptions`
-
-Для OpenAI ключ берется в [OpenAI API keys](https://platform.openai.com/api-keys). В `.env` нужно вставить сам secret key целиком в `SPEECH_TO_TEXT_API_KEY`.
-
-Важно: это не Telegram bot token и не ChatGPT Plus. Это отдельный API key в OpenAI Platform. Для работы API на аккаунте должна быть доступна оплата/кредиты.
 
 ## Структура
 
@@ -36,83 +32,49 @@
 │   ├── audio-transcriber-bot.service
 │   └── redeploy.sh
 ├── .env.example
+├── .gitignore
 ├── README.md
 └── requirements.txt
 ```
 
-## Локальный запуск
+## Установка whisper.cpp на Ubuntu
 
-Создайте виртуальное окружение:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-Установите зависимости:
+Эти команды ставят локальное оффлайн-распознавание отдельно от проекта бота:
 
 ```bash
-pip install -r requirements.txt
+cd /home/ubuntu
+sudo apt update
+sudo apt install -y git cmake build-essential ffmpeg
+
+git clone https://github.com/ggml-org/whisper.cpp.git
+cd whisper.cpp
+
+cmake -B build
+cmake --build build -j 2
+
+./models/download-ggml-model.sh tiny
 ```
 
-Создайте `.env`:
+Для русского языка нужна multilingual-модель `tiny`, `base`, `small` и так далее. Не ставьте `tiny.en`: она только для английского.
+
+Проверить, что бинарник появился:
 
 ```bash
-cp .env.example .env
-nano .env
+ls -lh /home/ubuntu/whisper.cpp/build/bin/whisper-cli
+ls -lh /home/ubuntu/whisper.cpp/models/ggml-tiny.bin
 ```
 
-Минимально заполните:
+## Установка бота
 
-```env
-BOT_TOKEN=123456:telegram-bot-token
-SPEECH_TO_TEXT_API_KEY=sk-your-openai-api-key
-ALLOWED_CHAT_IDS=123456789
-```
-
-`ALLOWED_CHAT_IDS` можно узнать командой `/chatid` или `/chatId`. При первом запуске можно оставить `ALLOWED_CHAT_IDS` пустым, отправить команду боту, скопировать `chat_id` в `.env`, затем перезапустить бота.
-
-Запустите бота:
-
-```bash
-python -m bot.main
-```
-
-## Переменные окружения
-
-| Переменная | Обязательная | Описание |
-| --- | --- | --- |
-| `BOT_TOKEN` | да | Токен Telegram-бота от BotFather. |
-| `SPEECH_TO_TEXT_API_KEY` | да | Secret key от OpenAI Platform или другого OpenAI-compatible speech-to-text сервиса. Для OpenAI создается на `https://platform.openai.com/api-keys`. |
-| `ALLOWED_CHAT_IDS` | нет | Список chat_id через запятую. Узнать можно командой `/chatid` или `/chatId`. |
-| `DOWNLOAD_DIR` | нет | Каталог временных загрузок. По умолчанию `tmp/downloads`. |
-| `MAX_FILE_MB` | нет | Максимальный размер файла в MB. По умолчанию `20`. |
-| `SPEECH_TO_TEXT_API_URL` | нет | Endpoint STT API. По умолчанию OpenAI audio transcriptions endpoint. |
-| `SPEECH_TO_TEXT_MODEL` | нет | Модель STT. По умолчанию `whisper-1`. |
-| `SPEECH_TO_TEXT_LANGUAGE` | нет | Подсказка языка, например `ru`. Можно оставить пустым. |
-| `SPEECH_TO_TEXT_TIMEOUT_SECONDS` | нет | Timeout запроса к STT API. По умолчанию `120`. |
-
-Если `ALLOWED_CHAT_IDS` пустой, доступ не ограничивается. Для личного бота лучше после проверки сразу заполнить `ALLOWED_CHAT_IDS`.
-
-## Команды бота
-
-- `/start` и `/help` - краткая справка;
-- `/chatid` и `/chatId` - показать `chat_id`, который нужно вписать в `ALLOWED_CHAT_IDS`;
-- `/status` - проверить, что бот жив.
-
-## Деплой на Ubuntu через systemd
-
-Ниже предполагается каталог `/home/ubuntu/audio-transcriber-bot`.
-
-Клонируйте или скопируйте проект:
+Ниже предполагается каталог `/home/ubuntu/audio-transcriber-bot`. Он отдельный от уже существующего бота.
 
 ```bash
 cd /home/ubuntu
 git clone <repo-url> audio-transcriber-bot
-cd audio-transcriber-bot
+cd /home/ubuntu/audio-transcriber-bot
 ```
 
-Создайте виртуальное окружение:
+Создайте отдельное виртуальное окружение:
 
 ```bash
 python3 -m venv .venv
@@ -128,55 +90,126 @@ cp .env.example .env
 nano .env
 ```
 
-Установите systemd service:
+Минимальный `.env`:
+
+```env
+BOT_TOKEN=123456:telegram-bot-token
+ALLOWED_CHAT_IDS=
+
+DOWNLOAD_DIR=/home/ubuntu/audio-transcriber-bot/tmp/downloads
+MAX_FILE_MB=20
+
+FFMPEG_BINARY=ffmpeg
+WHISPER_CPP_BINARY=/home/ubuntu/whisper.cpp/build/bin/whisper-cli
+WHISPER_CPP_MODEL=/home/ubuntu/whisper.cpp/models/ggml-tiny.bin
+WHISPER_LANGUAGE=ru
+WHISPER_THREADS=1
+TRANSCRIPTION_TIMEOUT_SECONDS=600
+```
+
+`BOT_TOKEN` берется у BotFather. `ALLOWED_CHAT_IDS` сначала можно оставить пустым, запустить бота, отправить ему `/chatId`, скопировать `chat_id` в `.env`, затем перезапустить сервис.
+
+## Переменные окружения
+
+| Переменная | Обязательная | Описание |
+| --- | --- | --- |
+| `BOT_TOKEN` | да | Токен Telegram-бота от BotFather. |
+| `ALLOWED_CHAT_IDS` | нет | Список chat_id через запятую. Узнать можно командой `/chatid` или `/chatId`. Если пусто, доступ не ограничивается. |
+| `DOWNLOAD_DIR` | нет | Каталог временных загрузок. |
+| `MAX_FILE_MB` | нет | Максимальный размер файла в MB. По умолчанию `20`. |
+| `FFMPEG_BINARY` | нет | Команда или путь к `ffmpeg`. Обычно `ffmpeg`. |
+| `WHISPER_CPP_BINARY` | да | Путь к `whisper-cli`. |
+| `WHISPER_CPP_MODEL` | да | Путь к модели `ggml-*.bin`. Для слабой VM начать с `ggml-tiny.bin`. |
+| `WHISPER_LANGUAGE` | нет | Язык распознавания. Для русского `ru`. Можно оставить пустым для autodetect, но на слабой VM лучше `ru`. |
+| `WHISPER_THREADS` | нет | Число CPU-потоков. Для 1 GB RAM и второго бота рекомендуется `1`. |
+| `TRANSCRIPTION_TIMEOUT_SECONDS` | нет | Timeout локального распознавания. По умолчанию `600`. |
+
+## Команды бота
+
+- `/start` и `/help` - краткая справка;
+- `/chatid` и `/chatId` - показать `chat_id`, который нужно вписать в `ALLOWED_CHAT_IDS`;
+- `/status` - проверить, что бот жив.
+
+## Локальная проверка на сервере
+
+Запуск вручную:
 
 ```bash
-sudo cp deploy/audio-transcriber-bot.service /etc/systemd/system/audio-transcriber-bot.service
+cd /home/ubuntu/audio-transcriber-bot
+source .venv/bin/activate
+python -m bot.main
+```
+
+Остановить:
+
+```bash
+Ctrl+C
+```
+
+Если `.env` не заполнен, запуск должен остановиться на понятной ошибке `BOT_TOKEN is not set`. Реальный бот без токена не стартует.
+
+## Systemd
+
+Service уже подготовлен под каталог `/home/ubuntu/audio-transcriber-bot`:
+
+```bash
+sudo cp /home/ubuntu/audio-transcriber-bot/deploy/audio-transcriber-bot.service /etc/systemd/system/audio-transcriber-bot.service
 sudo systemctl daemon-reload
 sudo systemctl enable audio-transcriber-bot
 sudo systemctl start audio-transcriber-bot
 ```
 
-Проверьте статус:
+Проверить статус:
 
 ```bash
-sudo systemctl status audio-transcriber-bot
+sudo systemctl status audio-transcriber-bot --no-pager
 ```
 
-Посмотрите логи:
+Смотреть логи:
 
 ```bash
 journalctl -u audio-transcriber-bot -f
 ```
 
-## Redeploy
-
-Скрипт `deploy/redeploy.sh` делает `git pull`, обновляет зависимости и перезапускает service.
-
-Сделайте его исполняемым на сервере:
+Перезапуск после изменения `.env`:
 
 ```bash
-chmod +x deploy/redeploy.sh
+sudo systemctl restart audio-transcriber-bot
 ```
 
-Запуск:
+## Redeploy
 
 ```bash
+cd /home/ubuntu/audio-transcriber-bot
+chmod +x deploy/redeploy.sh
 ./deploy/redeploy.sh
 ```
 
-Если запускаете не от пользователя с правами на `systemctl restart`, используйте:
+Если не хватает прав на restart:
 
 ```bash
 sudo ./deploy/redeploy.sh
 ```
 
-## Проверка без запуска реального бота
+## Если качество tiny слабое
 
-Если `.env` не заполнен, команда:
+На твоей VM безопаснее начать с `tiny`. Если качество окажется плохим, можно попробовать `base`:
 
 ```bash
-python -m bot.main
+cd /home/ubuntu/whisper.cpp
+./models/download-ggml-model.sh base
 ```
 
-должна завершиться ошибкой конфигурации о том, что `BOT_TOKEN` не задан. Это нормальная проверка, что проект доходит до валидации настроек и не запускает polling без токена.
+Потом в `.env` заменить:
+
+```env
+WHISPER_CPP_MODEL=/home/ubuntu/whisper.cpp/models/ggml-base.bin
+```
+
+И перезапустить:
+
+```bash
+sudo systemctl restart audio-transcriber-bot
+```
+
+`small` для сервера с 1 GB RAM лучше не использовать: есть риск сильного swap и долгой обработки.
